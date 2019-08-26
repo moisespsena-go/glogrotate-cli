@@ -16,4 +16,4 @@ build_snapshot:
 build:
 	goreleaser --rm-dist --skip-publish
 release:
-	goreleaser --rm-dist --skip-validate
+	goreleaser --rm-dist

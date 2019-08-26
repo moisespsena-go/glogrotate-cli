@@ -11,7 +11,7 @@ See to [release page](https://github.com/moisespsena-go/glogrotation-cli/release
 ### Go! auto build
 
 ```bash
-go get -u github.com/moisespsena-go/glogrotation/glogrotation
+go get -u github.com/moisespsena-go/glogrotation-cli/glogrotation
 ```
 
 Executable installed on $GOPATH/bin/glogrotation
@@ -19,7 +19,7 @@ Executable installed on $GOPATH/bin/glogrotation
 ### Build from source
 
 ```bash
-cd $GOPATH/src/github.com/moisespsena-go/glogrotation/glogrotation
+cd $GOPATH/src/github.com/moisespsena-go/glogrotation-cli/glogrotation
 ```
 
 #### Using Makefile
