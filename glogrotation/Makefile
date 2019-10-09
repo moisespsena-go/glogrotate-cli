@@ -12,7 +12,7 @@ clean:
 upgrade:
 	go get -u
 build_snapshot:
-	goreleaser --snapshot --skip-publish --rm-dist
+	goreleaser --rm-dist --skip-publish --snapshot
 build:
 	goreleaser --rm-dist --skip-publish
 release:

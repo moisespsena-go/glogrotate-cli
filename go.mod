@@ -3,6 +3,7 @@ module github.com/moisespsena-go/glogrotation-cli
 go 1.12
 
 require (
+	github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239
 	github.com/apex/log v1.1.1
 	github.com/moisespsena-go/glogrotation v0.0.0-20190826142116-ea921bfb0ce9
 	github.com/moisespsena-go/logging v0.0.0-20190822190448-7f091123b63e
