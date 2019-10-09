@@ -5,7 +5,7 @@ import (
 )
 
 type ChanRW struct {
-	c chan []byte
+	C chan []byte
 }
 
 func NewChanRW() *ChanRW {
@@ -13,7 +13,7 @@ func NewChanRW() *ChanRW {
 }
 
 func (this *ChanRW) Read(p []byte) (n int, err error) {
-	d := <-this.c
+	d := <-this.C
 	if d == nil || len(d) == 0 {
 		err = io.EOF
 		return
@@ -23,6 +23,11 @@ func (this *ChanRW) Read(p []byte) (n int, err error) {
 }
 
 func (this *ChanRW) Write(p []byte) (n int, err error) {
-	this.c <- p
+	this.C <- p
 	return len(p), nil
+}
+
+func (this *ChanRW) Close() error {
+	close(this.C)
+	return nil
 }

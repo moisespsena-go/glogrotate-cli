@@ -19,16 +19,20 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
+	"syscall"
+
+	"github.com/anmitsu/go-shlex"
 
 	"github.com/moisespsena-go/srvreader"
 
 	"github.com/apex/log"
-	glogrotation_cli "github.com/moisespsena-go/glogrotation-cli"
+	"github.com/moisespsena-go/glogrotation-cli"
 
-	logrotate "github.com/moisespsena-go/glogrotation"
+	"github.com/moisespsena-go/glogrotation"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -46,6 +50,8 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		var (
 			flags            = cmd.Flags()
+			userExec         = viper.GetString("exec")
+			userExecERD      = viper.GetBool("stderr-redirection-disabled")
 			out              = viper.GetString("out")
 			in               = viper.GetString("in")
 			silent           = viper.GetBool("silent")
@@ -79,6 +85,8 @@ var rootCmd = &cobra.Command{
 		}
 
 		if printConfig {
+			fmt.Fprintln(os.Stdout, "user-exec: "+userExec)
+			fmt.Fprintln(os.Stdout, "stderr-redirection-disabled: ", userExecERD)
 			fmt.Fprintln(os.Stdout, "out: "+out)
 			fmt.Fprintln(os.Stdout, "in: "+in)
 			fmt.Fprintln(os.Stdout, cfg.Yaml())
@@ -90,8 +98,59 @@ var rootCmd = &cobra.Command{
 		defer Rotator.Close()
 
 		rw := glogrotation_cli.NewChanRW()
-		var wg sync.WaitGroup
 		var closers []io.Closer
+		var ec int
+
+		if userExec != "" {
+			var args []string
+			if args, err = shlex.Split(userExec, true); err != nil {
+				return fmt.Errorf("user-exec flag: %s", err.Error())
+			}
+			func() {
+				cmd := exec.Command(args[0], args[1:]...)
+				cmd.Env = os.Environ()
+				prepareCmd(cmd)
+				cmd.Stdin = os.Stdin
+				cmd.Stdout = rw
+
+				if userExecERD {
+					cmd.Stderr = os.Stderr
+				} else {
+					cmd.Stderr = rw
+				}
+
+				if err = cmd.Start(); err != nil {
+					return
+				}
+
+				sigs := make(chan os.Signal, 1)
+				signal.Notify(sigs)
+				go func() {
+					if err := cmd.Wait(); err != nil {
+						switch et := err.(type) {
+						case *exec.ExitError:
+							if !strings.HasPrefix(et.Error(), "signal: ") {
+								log.Errorf("exit code: %s", et)
+							}
+							ec = et.ExitCode()
+						default:
+							log.Error(err.Error())
+						}
+					}
+					rw.Close()
+				}()
+				go func() {
+					for sig := range sigs {
+						if sig != syscall.SIGCHLD {
+							cmd.Process.Signal(sig)
+						}
+					}
+				}()
+			}()
+			if err != nil {
+				return
+			}
+		}
 
 		inm := map[string]interface{}{}
 
@@ -105,15 +164,8 @@ var rootCmd = &cobra.Command{
 			inm[in] = true
 
 			switch {
-			case in == "" || in == "-":
-				wg.Add(1)
+			case in == "" || in == "-" && userExec == "":
 				go func() {
-					defer wg.Done()
-					defer func() {
-						for _, c := range closers {
-							c.Close()
-						}
-					}()
 					if _, err := io.Copy(rw, os.Stdin); err != nil {
 						if err != io.EOF {
 							log.Errorf("STDIN: %s", err.Error())
@@ -123,9 +175,7 @@ var rootCmd = &cobra.Command{
 			case srvreader.IsProto(in, "udp"):
 				udps := srvreader.NewUDPServer(in, int16(maxUdpBufferSize), rw)
 				closers = append(closers, udps)
-				wg.Add(1)
 				go func() {
-					defer wg.Done()
 					if err := udps.ListenAndServe(); err != nil {
 						log.Errorf("UDP Serve[%s]: %s", in, err)
 					}
@@ -133,9 +183,7 @@ var rootCmd = &cobra.Command{
 			case srvreader.IsProto(in, "http"):
 				tcps := srvreader.NewHTTPServerReader(in, rw)
 				closers = append(closers, tcps)
-				wg.Add(1)
 				go func() {
-					defer wg.Done()
 					if err := tcps.ListenAndServe(); err != nil {
 						log.Errorf("HTTP Serve[%s]: %s", in, err)
 					}
@@ -143,9 +191,7 @@ var rootCmd = &cobra.Command{
 			case srvreader.IsProto(in, "tcp"):
 				tcps := srvreader.NewTCPServerReader(in, rw)
 				closers = append(closers, tcps)
-				wg.Add(1)
 				go func() {
-					defer wg.Done()
 					if err := tcps.ListenAndServe(); err != nil {
 						log.Errorf("TCP Serve[%s]: %s", in, err)
 					}
@@ -155,10 +201,20 @@ var rootCmd = &cobra.Command{
 
 		inm = nil
 
+		defer func() {
+			for _, c := range closers {
+				c.Close()
+			}
+		}()
+
 		if silent {
 			_, err = io.Copy(Rotator, rw)
 		} else {
 			_, err = io.Copy(os.Stdout, io.TeeReader(rw, Rotator))
+		}
+
+		if ec != 0 {
+			os.Exit(ec)
 		}
 		return
 	},
@@ -178,12 +234,20 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 
 	flags := rootCmd.Flags()
+	flags.StringP("exec", "e", "", "execute PROGRAM and set your STDOUT and STDERR "+
+		"(uses --stderr-redirection-disabled to disable it) as rotator input. Redirects the main STDIN to PROGRAM STDIN")
+	flags.BoolP("stderr-redirection-disabled", "E", false, "on execute PROGRAM, disables "+
+		"PROGRAM STDERR to STDOUT redirection.")
 	flags.StringP("out", "o", "", "the OUTPUT file")
-	flags.StringP("in", "i", "-", "the INPUT file. `-` (hyphen char) is STDIN. See INPUT section for details")
+	flags.StringP("in", "i", "-", "the INPUT file. `-` (hyphen char) is STDIN. See INPUT "+
+		"section for details")
 	flags.StringP("history-dir", "c", "OUT.history", "history root directory")
-	flags.StringP("history-path", "p", "%Y/%M", "dynamic direcotry path inside ROOT DIR using TIME FORMAT")
-	flags.StringP("duration", "d", "M", "rotates every DURATION. Accepted values: Y - yearly, M - monthly, W - weekly, D - daily, h - hourly, m - minutely")
-	flags.StringP("max-size", "S", "50M", "Forces rotation if current log size is greather then MAX_SIZE. Values in bytes. Examples: 100, 100K, 50M, 1G, 1T")
+	flags.StringP("history-path", "p", "%Y/%M", "dynamic direcotry path inside ROOT DIR "+
+		"using TIME FORMAT")
+	flags.StringP("duration", "d", "M", "rotates every DURATION. Accepted values: "+
+		"Y - yearly, M - monthly, W - weekly, D - daily, h - hourly, m - minutely")
+	flags.StringP("max-size", "S", "50M", "Forces rotation if current log size is "+
+		"greather then MAX_SIZE. Values in bytes. Examples: 100, 100K, 50M, 1G, 1T")
 	flags.Int16("udp-max-bs", 2048, "max UDP server buffer size. It's int16 value")
 	flags.IntP("history-count", "C", 0, "Max history log count")
 	flags.IntP("dir-mode", "M", 0750, "directory perms")
@@ -194,7 +258,9 @@ func init() {
 	flags.Bool("silent", false, "disable tee to STDOUT")
 
 	for _, v := range []string{
-		"out", "in", "history-dir", "history-path", "duration",
+		"exec", "stderr-redirection-disabled",
+		"out", "in",
+		"history-dir", "history-path", "duration",
 		"max-size", "history-count", "dir-mode",
 		"file-mode", "silent", "udp-max-bs",
 	} {

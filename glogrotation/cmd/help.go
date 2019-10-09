@@ -33,8 +33,13 @@ EXAMPLES
 	NOTE: duration as minutely
 
 	A. Basic example
-		$ my_program | glogrotation -d m -o program.log
-		$ my_program 2>&1 | glogrotation -d m -o program.log
+		I. $ my_program arg1 arg2 | glogrotation -d m -o program.log
+		   is similar to:
+		   $ glogrotation -d m -o program.log -E -e 'my_program arg1 arg2'
+
+		II. $ my_program arg1 arg2 2>&1 | glogrotation -d m -o program.log
+		   is similar to:
+		   $ glogrotation -d m -o program.log -e 'my_program arg1 arg2'
 	
 	B. Input is STDIN, UDP, TCP and HTTP server
 		main terminal:
