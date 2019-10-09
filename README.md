@@ -67,8 +67,13 @@ $ glogrotation -h
         NOTE: duration as minutely
     
         A. Basic example
-            $ my_program | glogrotation -d m -o program.log
-            $ my_program 2>&1 | glogrotation -d m -o program.log
+            I. $ my_program arg1 arg2 | glogrotation -d m -o program.log
+               is similar to:
+               $ glogrotation -d m -o program.log -E -e 'my_program arg1 arg2'
+    
+            II. $ my_program arg1 arg2 2>&1 | glogrotation -d m -o program.log
+               is similar to:
+               $ glogrotation -d m -o program.log -e 'my_program arg1 arg2'
         
         B. Input is STDIN, UDP, TCP and HTTP server
             main terminal:
@@ -170,20 +175,22 @@ $ glogrotation -h
       version     Show binary version
     
     Flags:
-          --config string         config file
-      -M, --dir-mode int          directory perms (default 0750)
-      -d, --duration string       rotates every DURATION. Accepted values: Y - yearly, M - monthly, W - weekly, D - daily, h - hourly, m - minutely (default "M")
-      -m, --file-mode int         file perms (default 0640)
-      -h, --help                  help for glogrotation
-      -C, --history-count int     Max history log count
-      -c, --history-dir string    history root directory (default "OUT.history")
-      -p, --history-path string   dynamic direcotry path inside ROOT DIR using TIME FORMAT (default "%Y/%M")
-      -i, --in -                  the INPUT file. - (hyphen char) is STDIN. See INPUT section for details (default "-")
-      -S, --max-size string       Forces rotation if current log size is greather then MAX_SIZE. Values in bytes. Examples: 100, 100K, 50M, 1G, 1T (default "50M")
-      -o, --out string            the OUTPUT file
-          --print                 print current config
-          --silent                disable tee to STDOUT
-          --udp-max-bs int16      max UDP server buffer size. It's int16 value (default 2048)
+          --config string                 config file
+      -M, --dir-mode int                  directory perms (default 0750)
+      -d, --duration string               rotates every DURATION. Accepted values: Y - yearly, M - monthly, W - weekly, D - daily, h - hourly, m - minutely (default "M")
+      -e, --exec string                   execute PROGRAM and set your STDOUT and STDERR (uses --stderr-redirection-disabled to disable it) as rotator input. Redirects the main STDIN to PROGRAM STDIN
+      -m, --file-mode int                 file perms (default 0640)
+      -h, --help                          help for glogrotation
+      -C, --history-count int             Max history log count
+      -c, --history-dir string            history root directory (default "OUT.history")
+      -p, --history-path string           dynamic direcotry path inside ROOT DIR using TIME FORMAT (default "%Y/%M")
+      -i, --in -                          the INPUT file. - (hyphen char) is STDIN. See INPUT section for details (default "-")
+      -S, --max-size string               Forces rotation if current log size is greather then MAX_SIZE. Values in bytes. Examples: 100, 100K, 50M, 1G, 1T (default "50M")
+      -o, --out string                    the OUTPUT file
+          --print                         print current config
+          --silent                        disable tee to STDOUT
+      -E, --stderr-redirection-disabled   on execute PROGRAM, disables PROGRAM STDERR to STDOUT redirection.
+          --udp-max-bs int16              max UDP server buffer size. It's int16 value (default 2048)
 
 ## Author
 [Moises P. Sena](https://github.com/moisespsena)
