@@ -2,8 +2,15 @@
 
 package cmd
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+)
 
 func prepareCmd(cmd *exec.Cmd) {
 
+}
+
+func killable(sig os.Signal) bool {
+	return true
 }

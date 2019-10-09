@@ -23,7 +23,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/anmitsu/go-shlex"
 
@@ -141,7 +140,7 @@ var rootCmd = &cobra.Command{
 				}()
 				go func() {
 					for sig := range sigs {
-						if sig != syscall.SIGCHLD {
+						if killable(sig) {
 							cmd.Process.Signal(sig)
 						}
 					}
