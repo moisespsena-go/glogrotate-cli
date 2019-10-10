@@ -17,14 +17,14 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"github.com/anmitsu/go-shlex"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
-
-	"github.com/anmitsu/go-shlex"
+	"syscall"
 
 	"github.com/moisespsena-go/srvreader"
 
@@ -109,7 +109,10 @@ var rootCmd = &cobra.Command{
 				cmd := exec.Command(args[0], args[1:]...)
 				cmd.Env = os.Environ()
 				prepareCmd(cmd)
-				cmd.Stdin = os.Stdin
+				inw, err := cmd.StdinPipe()
+				if err != nil {
+					log.Fatalf("pipe stdin failed: %s", err)
+				}
 				cmd.Stdout = rw
 
 				if userExecERD {
@@ -122,9 +125,15 @@ var rootCmd = &cobra.Command{
 					return
 				}
 
+				go io.Copy(inw, os.Stdin)
+
 				sigs := make(chan os.Signal, 1)
 				signal.Notify(sigs)
 				go func() {
+					defer func() {
+						log.Info("child done")
+						rw.Close()
+					}()
 					if err := cmd.Wait(); err != nil {
 						switch et := err.(type) {
 						case *exec.ExitError:
@@ -136,10 +145,12 @@ var rootCmd = &cobra.Command{
 							log.Error(err.Error())
 						}
 					}
-					rw.Close()
 				}()
 				go func() {
 					for sig := range sigs {
+						if sig == syscall.SIGINT {
+							sig = syscall.SIGTERM
+						}
 						if killable(sig) {
 							cmd.Process.Signal(sig)
 						}
@@ -153,6 +164,7 @@ var rootCmd = &cobra.Command{
 
 		inm := map[string]interface{}{}
 
+	inloop:
 		// +udp:localhost:5678
 		for _, in := range strings.Split(in, "+") {
 			in = strings.TrimSpace(in)
@@ -163,14 +175,17 @@ var rootCmd = &cobra.Command{
 			inm[in] = true
 
 			switch {
-			case in == "" || in == "-" && userExec == "":
-				go func() {
-					if _, err := io.Copy(rw, os.Stdin); err != nil {
-						if err != io.EOF {
-							log.Errorf("STDIN: %s", err.Error())
+			case in == "" || in == "-":
+				if userExec == "" {
+					go func() {
+						if _, err := io.Copy(rw, os.Stdin); err != nil {
+							if err != io.EOF {
+								log.Errorf("STDIN: %s", err.Error())
+							}
 						}
-					}
-				}()
+					}()
+				}
+				continue inloop
 			case srvreader.IsProto(in, "udp"):
 				udps := srvreader.NewUDPServer(in, int16(maxUdpBufferSize), rw)
 				closers = append(closers, udps)
